@@ -4,13 +4,17 @@
  * 1. Scan for BLE devices and Wi-Fi networks to estimate crowd density
  * 2. Count unique devices during scan windows
  * 3. Classify crowd level (calm/moderate/crowded) using threshold model
- * 4. Transmit crowd data via LoRaWAN protocol
+ * 4. Track specific BLE beacon device (presence and RSSI)
+ * 5. Detect static vs mobile environment based on WiFi AP changes
+ * 6. Transmit crowd data via LoRaWAN protocol
  *  
  * Description:
  * 1. Uses passive BLE scanning to detect nearby Bluetooth devices
  * 2. Scans Wi-Fi networks to count access points and connected devices
  * 3. Implements threshold-based crowd classification
- * 4. Sends aggregated data through LoRaWAN
+ * 4. Tracks a specific BLE beacon and reports its presence/signal strength
+ * 5. Analyzes WiFi scan stability to classify environment as static or mobile
+ * 6. Sends aggregated data through LoRaWAN
  * 
  * HelTec AutoMation, Chengdu, China
  * 成都惠利特自动化科技有限公司
@@ -25,11 +29,12 @@
 #include <WiFi.h>
 #include <set>
 #include <string>
+#include "secrets.h"  // LoRaWAN credentials and beacon address
 
-/* OTAA para*/
-uint8_t devEui[] = { 0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x07, 0x43, 0x59 };
-uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-uint8_t appKey[] = { 0xCC, 0x4E, 0xEA, 0x15, 0x71, 0xB5, 0x82, 0x99, 0x35, 0x3C, 0xD1, 0x5D, 0x12, 0x6E, 0xDA, 0x5D };
+/* OTAA para - Loaded from secrets.h */
+uint8_t devEui[] = LORAWAN_DEV_EUI;
+uint8_t appEui[] = LORAWAN_APP_EUI;
+uint8_t appKey[] = LORAWAN_APP_KEY;
 
 /* ABP para*/
 uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda,0x85 };
@@ -91,6 +96,15 @@ uint8_t confirmedNbTrials = 4;
 #define MODERATE_THRESHOLD 15    // 6-15 devices = moderate
                                  // 16+ devices = crowded
 
+// ====== BLE Beacon Tracking Configuration ======
+// Beacon address is loaded from secrets.h
+#define BEACON_ADDRESS BEACON_MAC_ADDRESS
+#define RSSI_NOT_FOUND -128      // RSSI value when beacon is not detected
+
+// ====== Environment Detection Configuration ======
+#define WIFI_CHANGE_THRESHOLD 0.3  // 30% change threshold for mobile detection
+#define MIN_NETWORKS_FOR_ANALYSIS 3  // Minimum networks needed for analysis
+
 // Crowd level enumeration
 enum CrowdLevel {
   CALM = 0,
@@ -98,14 +112,32 @@ enum CrowdLevel {
   CROWDED = 2
 };
 
+// Environment type enumeration
+enum EnvironmentType {
+  STATIC = 0,
+  MOBILE = 1,
+  UNKNOWN = 2  // Not enough data yet
+};
+
 // ====== BLE Scanning Variables ======
 BLEScan* pBLEScan;
 std::set<std::string> uniqueBLEDevices;
 uint16_t bleDeviceCount = 0;
 
+// ====== BLE Beacon Tracking Variables ======
+bool beaconDetected = false;
+int8_t beaconRSSI = RSSI_NOT_FOUND;
+String targetBeaconAddress = BEACON_ADDRESS;
+
 // ====== WiFi Scanning Variables ======
 std::set<std::string> uniqueWiFiNetworks;
+std::set<std::string> previousWiFiNetworks;
 uint16_t wifiNetworkCount = 0;
+bool firstWiFiScan = true;
+
+// ====== Environment Detection Variables ======
+EnvironmentType environmentType = UNKNOWN;
+float wifiChangeRatio = 0.0;
 
 // ====== Crowd Detection Variables ======
 uint16_t totalUniqueDevices = 0;
@@ -118,6 +150,16 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     String arduinoAddress = advertisedDevice.getAddress().toString();
     std::string address = arduinoAddress.c_str();
     uniqueBLEDevices.insert(address);
+    
+    // Check if this is our tracked beacon
+    if (arduinoAddress.equalsIgnoreCase(targetBeaconAddress)) {
+      beaconDetected = true;
+      beaconRSSI = advertisedDevice.getRSSI();
+      Serial.print("  >> Tracked beacon found! Address: ");
+      Serial.print(arduinoAddress);
+      Serial.print(", RSSI: ");
+      Serial.println(beaconRSSI);
+    }
   }
 };
 
@@ -127,6 +169,10 @@ void scanBLEDevices() {
   
   // Clear previous scan results
   uniqueBLEDevices.clear();
+  
+  // Reset beacon tracking for this scan
+  beaconDetected = false;
+  beaconRSSI = RSSI_NOT_FOUND;
   
   // Start BLE scan (returns pointer to results)
   BLEScanResults* foundDevices = pBLEScan->start(BLE_SCAN_TIME, false);
@@ -138,6 +184,13 @@ void scanBLEDevices() {
   Serial.print(bleDeviceCount);
   Serial.println(" unique devices.");
   
+  // Report beacon status
+  if (beaconDetected) {
+    Serial.println("  Tracked beacon: DETECTED");
+  } else {
+    Serial.println("  Tracked beacon: NOT FOUND");
+  }
+  
   // Clear scan results to free memory
   pBLEScan->clearResults();
 }
@@ -146,7 +199,12 @@ void scanBLEDevices() {
 void scanWiFiNetworks() {
   Serial.println("Starting WiFi scan...");
   
-  // Clear previous scan results
+  // Store previous scan results before clearing
+  if (!firstWiFiScan) {
+    previousWiFiNetworks = uniqueWiFiNetworks;
+  }
+  
+  // Clear current scan results
   uniqueWiFiNetworks.clear();
   
   // Disconnect from any networks to ensure clean scan
@@ -176,8 +234,76 @@ void scanWiFiNetworks() {
   Serial.print(wifiNetworkCount);
   Serial.println(" unique networks.");
   
+  // Analyze environment stability
+  analyzeEnvironment();
+  
+  // Mark that we've completed at least one scan
+  firstWiFiScan = false;
+  
   // Clean up
   WiFi.scanDelete();
+}
+
+// ====== Environment Analysis Function ======
+void analyzeEnvironment() {
+  // Need at least two scans to compare
+  if (firstWiFiScan) {
+    environmentType = UNKNOWN;
+    wifiChangeRatio = 0.0;
+    Serial.println("  Environment: UNKNOWN (first scan)");
+    return;
+  }
+  
+  // Need minimum number of networks for meaningful analysis
+  if (wifiNetworkCount < MIN_NETWORKS_FOR_ANALYSIS && 
+      previousWiFiNetworks.size() < MIN_NETWORKS_FOR_ANALYSIS) {
+    environmentType = UNKNOWN;
+    wifiChangeRatio = 0.0;
+    Serial.println("  Environment: UNKNOWN (insufficient networks)");
+    return;
+  }
+  
+  // Calculate the intersection (common networks) and union
+  std::set<std::string> intersection;
+  std::set<std::string> networkUnion;
+  
+  // Find common networks (intersection)
+  for (const auto& network : uniqueWiFiNetworks) {
+    if (previousWiFiNetworks.find(network) != previousWiFiNetworks.end()) {
+      intersection.insert(network);
+    }
+  }
+  
+  // Calculate union (all unique networks from both scans)
+  networkUnion = uniqueWiFiNetworks;
+  for (const auto& network : previousWiFiNetworks) {
+    networkUnion.insert(network);
+  }
+  
+  // Calculate change ratio using Jaccard distance
+  // Change ratio = 1 - (intersection / union)
+  if (networkUnion.size() > 0) {
+    float similarity = (float)intersection.size() / (float)networkUnion.size();
+    wifiChangeRatio = 1.0 - similarity;
+  } else {
+    wifiChangeRatio = 0.0;
+  }
+  
+  // Classify environment
+  if (wifiChangeRatio >= WIFI_CHANGE_THRESHOLD) {
+    environmentType = MOBILE;
+    Serial.print("  Environment: MOBILE (change ratio: ");
+  } else {
+    environmentType = STATIC;
+    Serial.print("  Environment: STATIC (change ratio: ");
+  }
+  Serial.print(wifiChangeRatio, 2);
+  Serial.println(")");
+  
+  Serial.print("    Common networks: ");
+  Serial.print(intersection.size());
+  Serial.print(", Total unique: ");
+  Serial.println(networkUnion.size());
 }
 
 // ====== Crowd Level Classification Function ======
@@ -229,6 +355,30 @@ void performCrowdDetection() {
       break;
   }
   
+  // Beacon tracking summary
+  Serial.print("Tracked Beacon: ");
+  if (beaconDetected) {
+    Serial.print("PRESENT (RSSI: ");
+    Serial.print(beaconRSSI);
+    Serial.println(" dBm)");
+  } else {
+    Serial.println("NOT FOUND");
+  }
+  
+  // Environment type summary
+  Serial.print("Environment: ");
+  switch (environmentType) {
+    case STATIC:
+      Serial.println("STATIC");
+      break;
+    case MOBILE:
+      Serial.println("MOBILE");
+      break;
+    case UNKNOWN:
+      Serial.println("UNKNOWN");
+      break;
+  }
+  
   Serial.println("==========================================\n");
 }
 
@@ -252,8 +402,11 @@ static void prepareTxFrame( uint8_t port )
   // Byte 2-3: WiFi network count (uint16_t, big-endian)
   // Byte 4-5: Total device count (uint16_t, big-endian)
   // Byte 6: Crowd level (uint8_t: 0=CALM, 1=MODERATE, 2=CROWDED)
+  // Byte 7: Beacon detected (uint8_t: 0=false, 1=true)
+  // Byte 8: Beacon RSSI (int8_t: signed, -128 if not found)
+  // Byte 9: Environment type (uint8_t: 0=STATIC, 1=MOBILE, 2=UNKNOWN)
   
-  appDataSize = 7;
+  appDataSize = 10;
   
   // BLE device count (bytes 0-1)
   appData[0] = (bleDeviceCount >> 8) & 0xFF;  // High byte
@@ -270,6 +423,15 @@ static void prepareTxFrame( uint8_t port )
   // Crowd level (byte 6)
   appData[6] = (uint8_t)currentCrowdLevel;
   
+  // Beacon detected (byte 7)
+  appData[7] = beaconDetected ? 1 : 0;
+  
+  // Beacon RSSI (byte 8) - cast to uint8_t for transmission
+  appData[8] = (uint8_t)beaconRSSI;
+  
+  // Environment type (byte 9)
+  appData[9] = (uint8_t)environmentType;
+  
   Serial.println("LoRaWAN payload prepared:");
   Serial.print("  BLE: ");
   Serial.println(bleDeviceCount);
@@ -279,6 +441,16 @@ static void prepareTxFrame( uint8_t port )
   Serial.println(totalUniqueDevices);
   Serial.print("  Level: ");
   Serial.println(currentCrowdLevel);
+  Serial.print("  Beacon: ");
+  Serial.print(beaconDetected ? "YES" : "NO");
+  if (beaconDetected) {
+    Serial.print(" (RSSI: ");
+    Serial.print(beaconRSSI);
+    Serial.print(" dBm)");
+  }
+  Serial.println();
+  Serial.print("  Environment: ");
+  Serial.println(environmentType);
 }
 
 //if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ 
@@ -319,6 +491,11 @@ void setup() {
   Serial.print("  Crowded Threshold: > ");
   Serial.print(MODERATE_THRESHOLD);
   Serial.println(" devices");
+  Serial.print("  Tracked Beacon: ");
+  Serial.println(targetBeaconAddress);
+  Serial.print("  WiFi Change Threshold: ");
+  Serial.print(WIFI_CHANGE_THRESHOLD * 100);
+  Serial.println("%");
   Serial.print("  LoRaWAN TX Interval: ");
   Serial.print(appTxDutyCycle / 1000);
   Serial.println(" seconds");
