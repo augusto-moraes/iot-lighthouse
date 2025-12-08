@@ -34,8 +34,9 @@ An IoT project that measures room occupancy using a Heltec ESP32 V3 with LoRa. T
    cd iot-lighthouse
    ```
 
-3. **Configure Beacon MAC Address** (if using Extension 4)
-   - Upload [`LoRaWAN/BLE_Beacon_Example.ino`](LoRaWAN/BLE_Beacon_Example.ino) to second ESP32
+3. **Setup BLE Beacon** (if using beacon tracking)
+   - See [`BLE_Beacon/README.md`](BLE_Beacon/README.md) for standalone beacon setup
+   - Upload [`BLE_Beacon/BLE_Beacon.ino`](BLE_Beacon/BLE_Beacon.ino) to a second ESP32
    - Note the MAC address from Serial Monitor
    - Edit [`LoRaWAN/secrets.h`](LoRaWAN/secrets.h) and update:
      ```cpp
@@ -136,8 +137,8 @@ function decodeUplink(input) {
 Track a specific BLE device through your environment:
 
 ### Setup
-1. Configure second ESP32 as beacon using [`BLE_Beacon_Example.ino`](LoRaWAN/BLE_Beacon_Example.ino)
-2. Update `BEACON_ADDRESS` in [`LoRaWAN/secrets.h`](LoRaWAN/secrets.h)
+1. Configure second ESP32 as beacon using [`BLE_Beacon/BLE_Beacon.ino`](BLE_Beacon/BLE_Beacon.ino)
+2. Update `BEACON_MAC_ADDRESS` in [`LoRaWAN/secrets.h`](LoRaWAN/secrets.h)
 3. Place beacon in target location
 4. Monitor presence and signal strength in dashboard
 
@@ -323,30 +324,39 @@ All fields are available for visualization:
 
 ```
 iot-lighthouse/
-├── LoRaWAN/
+├── LoRaWAN/                     # Main Lighthouse Node application
 │   ├── LoRaWAN.ino              # Main application code
-│   ├── secrets.h                # LoRaWAN credentials
+│   ├── secrets.h                # LoRaWAN credentials (gitignored)
 │   ├── secrets_template.h       # Template for credentials
 │   ├── payload_formatter.js     # TTN decoder
-│   ├── BLE_Beacon_Example.ino   # Beacon setup code
 │   ├── documentation/
 │   │   ├── EXTENSIONS_README.md     # Detailed feature documentation
 │   │   ├── PAYLOAD_REFERENCE.md     # Payload format reference
 │   │   ├── ARCHITECTURE.md          # System architecture diagrams
 │   │   └── IMPLEMENTATION_SUMMARY.md # Implementation overview
 │   └── README.md                # LoRaWAN-specific documentation
+├── BLE_Beacon/                  # Standalone BLE Beacon application
+│   ├── BLE_Beacon.ino           # Beacon code (for separate device)
+│   ├── beacon_secrets.h         # Beacon configuration
+│   └── README.md                # Beacon documentation
 ├── QUICK_START.md              # Quick start guide
 └── README.md                   # This file
 ```
 
 ## 📖 Documentation
 
-- **[LoRaWAN/documentation/EXTENSIONS_README.md](LoRaWAN/documentation/EXTENSIONS_README.md)** - Complete guide to Extensions 4 & 5
+### Main System
+- **[LoRaWAN/README.md](LoRaWAN/README.md)** - Lighthouse Node documentation
+- **[QUICK_START.md](QUICK_START.md)** - Quick start guide
+
+### Advanced Features
+- **[LoRaWAN/documentation/EXTENSIONS_README.md](LoRaWAN/documentation/EXTENSIONS_README.md)** - Complete guide to beacon tracking & environment detection
 - **[LoRaWAN/documentation/PAYLOAD_REFERENCE.md](LoRaWAN/documentation/PAYLOAD_REFERENCE.md)** - Payload format and decoding
 - **[LoRaWAN/documentation/ARCHITECTURE.md](LoRaWAN/documentation/ARCHITECTURE.md)** - System architecture and diagrams
 - **[LoRaWAN/documentation/IMPLEMENTATION_SUMMARY.md](LoRaWAN/documentation/IMPLEMENTATION_SUMMARY.md)** - Implementation details
-- **[LoRaWAN/README.md](LoRaWAN/README.md)** - Original LoRaWAN documentation
-- **[QUICK_START.md](QUICK_START.md)** - Quick start guide
+
+### BLE Beacon (Optional Tracking Component)
+- **[BLE_Beacon/README.md](BLE_Beacon/README.md)** - Standalone beacon setup and configuration
 
 ## 💡 Customization Ideas
 

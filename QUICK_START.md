@@ -11,20 +11,18 @@ Two advanced extensions to your LoRa Lighthouse Node:
 
 ### Step 1: Configure the Beacon MAC Address
 
-Open `LoRaWAN/secrets.h` and find:
-
-```cpp
-#define BEACON_MAC_ADDRESS "00:00:00:00:00:00"  // UPDATE THIS!
-```
-
 **Option A - If you have a second ESP32:**
-1. Upload `LoRaWAN/BLE_Beacon_Example.ino` to it
-2. Open Serial Monitor - it will show the MAC address
-3. Copy that MAC address to `secrets.h`
+1. See [`BLE_Beacon/README.md`](BLE_Beacon/README.md) for detailed setup
+2. Upload `BLE_Beacon/BLE_Beacon.ino` to the second ESP32
+3. Open Serial Monitor - it will show the MAC address
+4. Open `LoRaWAN/secrets.h` and update:
+   ```cpp
+   #define BEACON_MAC_ADDRESS "24:6f:28:aa:bb:cc"  // Your beacon's MAC
+   ```
 
 **Option B - No second ESP32?**
-- Leave it as is - the system will work fine
-- Beacon will just show as "not detected" (expected behavior)
+- Leave `BEACON_MAC_ADDRESS` as the default `"00:00:00:00:00:00"`
+- The system will work fine - beacon will just show as "not detected" (expected behavior)
 
 ### Step 2: Configure LoRaWAN Credentials
 
