@@ -92,8 +92,8 @@ uint8_t confirmedNbTrials = 4;
 #define WIFI_SCAN_TIME 5         // Time to wait for WiFi scan completion
 
 // Crowd level thresholds
-#define CALM_THRESHOLD 10         // 0-5 devices = calm
-#define MODERATE_THRESHOLD 30    // 6-15 devices = moderate
+#define CALM_THRESHOLD 75         // 0-5 devices = calm
+#define MODERATE_THRESHOLD 125    // 6-15 devices = moderate
                                  // 16+ devices = crowded
 
 // ====== BLE Beacon Tracking Configuration ======
