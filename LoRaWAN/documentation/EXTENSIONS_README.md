@@ -114,8 +114,8 @@ The system analyzes WiFi scan results over time to determine if the environment 
 In `LoRaWAN.ino`:
 
 ```cpp
-#define WIFI_CHANGE_THRESHOLD 0.3    // 30% change threshold
-#define MIN_NETWORKS_FOR_ANALYSIS 3  // Minimum networks needed
+#define WIFI_CHANGE_THRESHOLD 0.1    // 10% change threshold
+#define MIN_DEVICES_FOR_ANALYSIS 3  // Minimum devices (WiFi + BLE) needed for analysis
 ```
 
 You can adjust these values:
@@ -264,9 +264,10 @@ WiFi scan complete. Found 6 unique networks.
 
 ### Environment Always "UNKNOWN"
 - Wait for at least 2 scan cycles (minimum 1 minute)
-- Ensure WiFi scan finds at least `MIN_NETWORKS_FOR_ANALYSIS` networks
-- Check that WiFi scanning is working (see network count in Serial)
-- Lower `MIN_NETWORKS_FOR_ANALYSIS` if in a low-WiFi area
+- Environment will be UNKNOWN only during the very first scan (initialization)
+- Ensure the scan finds at least `MIN_DEVICES_FOR_ANALYSIS` devices (WiFi + BLE) for a meaningful comparison
+- Check that scanning is working (see device count in Serial)
+- Lower `MIN_DEVICES_FOR_ANALYSIS` if in a low-device environment
 
 ### RSSI Values Seem Wrong
 - RSSI is always negative (0 to -128)

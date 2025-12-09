@@ -13,7 +13,7 @@ An IoT project that measures room occupancy using a Heltec ESP32 V3 with LoRa. T
 
 ### Advanced Extensions
 - **🎯 BLE Beacon Tracking** (Extension 4): Track a specific device's presence and signal strength
-- **📊 Environment Detection** (Extension 5): Classify environment as STATIC or MOBILE based on WiFi stability
+- **📊 Environment Detection** (Extension 5): Classify environment as STATIC or MOBILE based on combined WiFi + BLE device stability
 
 ## 📋 Quick Start
 
@@ -163,8 +163,8 @@ Automatically classifies the environment as static or mobile:
 ### How It Works
 - Compares WiFi networks between consecutive scans using Jaccard distance
 - Calculates change ratio to detect movement
-- **STATIC**: <30% change (stable location)
-- **MOBILE**: ≥30% change (moving/changing environment)
+- **STATIC**: <5% change (stable location)
+- **MOBILE**: >5% change (moving/changing environment)
 - **UNKNOWN**: Not enough data yet
 
 ### Use Cases
@@ -175,8 +175,8 @@ Automatically classifies the environment as static or mobile:
 
 ### Configuration
 ```cpp
-#define WIFI_CHANGE_THRESHOLD 0.3    // 30% change threshold
-#define MIN_NETWORKS_FOR_ANALYSIS 3  // Minimum networks needed
+#define WIFI_CHANGE_THRESHOLD 0.1    // 5% change threshold
+#define MIN_DEVICES_FOR_ANALYSIS 3  // Minimum devices (WiFi + BLE) needed for analysis
 ```
 
 ## 🔧 Configuration Options
@@ -205,8 +205,8 @@ uint32_t appTxDutyCycle = 30000; // Transmission interval (30 seconds)
 
 ### Environment Detection
 ```cpp
-#define WIFI_CHANGE_THRESHOLD 0.3           // 30% change = mobile
-#define MIN_NETWORKS_FOR_ANALYSIS 3         // Minimum WiFi networks
+#define WIFI_CHANGE_THRESHOLD 0.1           // 10% change = mobile
+#define MIN_DEVICES_FOR_ANALYSIS 3         // Minimum devices (WiFi + BLE) for analysis
 ```
 
 ## 🧪 Testing & Serial Output
@@ -222,7 +222,7 @@ Configuration:
   Moderate Threshold: <= 15 devices
   Crowded Threshold: > 15 devices
   Tracked Beacon: 24:6f:28:aa:bb:cc
-  WiFi Change Threshold: 30.0%
+  Device Change Threshold (WiFi + BLE): 10.0%
   LoRaWAN TX Interval: 30 seconds
 ========================================
 
@@ -296,9 +296,10 @@ All fields are available for visualization:
 - ✅ Check Serial Monitor for all detected devices
 
 ### Environment Always "UNKNOWN"
+- ✅ The environment will be UNKNOWN only for the first scan (initialization)
 - ✅ Wait for at least 2 scan cycles (~1 minute)
-- ✅ Ensure sufficient WiFi networks detected
-- ✅ Lower `MIN_NETWORKS_FOR_ANALYSIS` if needed
+- ✅ Ensure sufficient devices (WiFi + BLE) detected
+- ✅ Lower `MIN_DEVICES_FOR_ANALYSIS` if needed
 
 ## ⚡ Power Consumption Notes
 

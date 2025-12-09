@@ -25,5 +25,6 @@
 // Beacon MAC Address - Replace with your beacon's address
 // Format: "AA:BB:CC:DD:EE:FF" or leave as "00:00:00:00:00:00" if not using beacon tracking
 #define BEACON_MAC_ADDRESS "00:00:00:00:00:00"
+//apikey datacake: NNSXS.553V7ZPYJJD6TXJLNY352JTSSGH3HVRDPNVJJUQ.BTVZMIZ3KRPA4XSY47FG5QXEC3WP5CHNZEKKTDYO5W2CX6DXID4Q
 
 #endif // SECRETS_H

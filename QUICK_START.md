@@ -65,7 +65,7 @@ LoRa Lighthouse Node - Crowd Detection
 ========================================
 Configuration:
   Tracked Beacon: 24:6f:28:aa:bb:cc
-  WiFi Change Threshold: 30.0%
+  Device Change Threshold (WiFi + BLE): 5.0%
   ...
 
 Starting BLE scan...
@@ -145,7 +145,7 @@ Your uplink data will now include:
 In `LoRaWAN.ino` around line ~95:
 
 ```cpp
-#define WIFI_CHANGE_THRESHOLD 0.3    // Default: 30% change
+#define WIFI_CHANGE_THRESHOLD 0.1    // Default: 10% change
 ```
 
 - **More sensitive** (detect smaller changes): `0.2` (20%)

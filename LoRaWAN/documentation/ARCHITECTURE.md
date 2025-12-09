@@ -107,8 +107,8 @@ Union: {A, B, C, D, E, F, G}  (all unique networks)
 Similarity = |Intersection| / |Union| = 3 / 7 = 0.43
 Change Ratio = 1 - Similarity = 0.57 (57% change)
 
-If Change Ratio ≥ 0.30 → MOBILE
-If Change Ratio < 0.30 → STATIC
+If Change Ratio > 0.5 → MOBILE
+If Change Ratio ≤ 0.5 → STATIC
 If Not Enough Data → UNKNOWN
 ```
 
@@ -338,11 +338,11 @@ int8_t beaconRSSI;                       // Beacon signal strength
 std::set<std::string> uniqueWiFiNetworks;     // Current scan
 std::set<std::string> previousWiFiNetworks;   // Previous scan
 uint16_t wifiNetworkCount;                    // Count of APs
-bool firstWiFiScan;                           // Initialization flag
+bool firstDeviceScan;                           // Initialization flag for combined device analysis
 
 // Environment
 EnvironmentType environmentType;         // STATIC/MOBILE/UNKNOWN
-float wifiChangeRatio;                   // Change percentage
+float deviceChangeRatio;                   // Change percentage (across WiFi + BLE)
 
 // Crowd Detection
 uint16_t totalUniqueDevices;            // BLE + WiFi

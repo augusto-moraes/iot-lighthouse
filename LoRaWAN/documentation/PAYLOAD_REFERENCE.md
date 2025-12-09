@@ -54,7 +54,8 @@ function decodeUplink(input) {
             beacon_detected: (bytes[7] || 0) === 1,
             beacon_rssi: toInt8(bytes[8]),
             environment_type: bytes[9] || 2,
-            environment_text: ['STATIC', 'MOBILE', 'UNKNOWN'][bytes[9] || 2]
+            environment_text: ['STATIC', 'MOBILE', 'UNKNOWN'][bytes[9] || 2],
+            // Note: environment is UNKNOWN only on the first scan; thereafter it's STATIC or MOBILE
         }
     };
 }

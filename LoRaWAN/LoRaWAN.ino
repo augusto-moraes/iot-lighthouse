@@ -5,7 +5,7 @@
  * 2. Count unique devices during scan windows
  * 3. Classify crowd level (calm/moderate/crowded) using threshold model
  * 4. Track specific BLE beacon device (presence and RSSI)
- * 5. Detect static vs mobile environment based on WiFi AP changes
+ * 5. Detect static vs mobile environment based on WiFi AP and BLE device changes
  * 6. Transmit crowd data via LoRaWAN protocol
  *  
  * Description:
@@ -88,8 +88,8 @@ uint8_t appPort = 2;
 uint8_t confirmedNbTrials = 4;
 
 // ====== Crowd Detection Configuration ======
-#define BLE_SCAN_TIME 5          // BLE scan duration in seconds
-#define WIFI_SCAN_TIME 5         // Time to wait for WiFi scan completion
+#define BLE_SCAN_TIME 20          // BLE scan duration in seconds
+#define WIFI_SCAN_TIME 20         // Time to wait for WiFi scan completion
 
 // Crowd level thresholds
 #define CALM_THRESHOLD 75         // 0-5 devices = calm
@@ -102,8 +102,9 @@ uint8_t confirmedNbTrials = 4;
 #define RSSI_NOT_FOUND -128      // RSSI value when beacon is not detected
 
 // ====== Environment Detection Configuration ======
-#define WIFI_CHANGE_THRESHOLD 0.3  // 30% change threshold for mobile detection
-#define MIN_NETWORKS_FOR_ANALYSIS 3  // Minimum networks needed for analysis
+#define WIFI_CHANGE_THRESHOLD 0.05  // 5% change threshold for mobile detection
+#define MIN_DEVICES_FOR_ANALYSIS 3  // Minimum devices (WiFi + BLE) needed for analysis
+#define MIN_NETWORKS_FOR_ANALYSIS MIN_DEVICES_FOR_ANALYSIS // compatibility alias
 
 // Crowd level enumeration
 enum CrowdLevel {
@@ -135,9 +136,20 @@ std::set<std::string> previousWiFiNetworks;
 uint16_t wifiNetworkCount = 0;
 bool firstWiFiScan = true;
 
+// ====== Combined Device Scanning Variables (WiFi + BLE) ======
+std::set<std::string> previousDevices;   // union of previous BLE and WiFi device IDs (RAM only)
+RTC_DATA_ATTR bool firstDeviceScan = true;  // RTC memory survives deep sleep
+uint16_t combinedDeviceCount = 0;
+
+// ====== RTC Memory for Device Tracking Across Deep Sleep ======
+#define MAX_RTC_DEVICES 256  // Maximum devices to track in RTC memory
+RTC_DATA_ATTR uint32_t previousDeviceHashes[MAX_RTC_DEVICES];  // Hash of device addresses
+RTC_DATA_ATTR uint16_t previousDeviceCount = 0;  // Count of stored device hashes
+
 // ====== Environment Detection Variables ======
-EnvironmentType environmentType = UNKNOWN;
-float wifiChangeRatio = 0.0;
+RTC_DATA_ATTR EnvironmentType environmentType = UNKNOWN;  // RTC memory survives deep sleep
+// 'deviceChangeRatio' is the Jaccard distance across ALL devices (WiFi + BLE)
+RTC_DATA_ATTR float deviceChangeRatio = 0.0;  // RTC memory survives deep sleep
 
 // ====== Crowd Detection Variables ======
 uint16_t totalUniqueDevices = 0;
@@ -244,66 +256,103 @@ void scanWiFiNetworks() {
   WiFi.scanDelete();
 }
 
+// ====== Simple String Hash Function (djb2) ======
+uint32_t hashString(const std::string& str) {
+  uint32_t hash = 5381;
+  for (char c : str) {
+    hash = ((hash << 5) + hash) + c;  // hash * 33 + c
+  }
+  return hash;
+}
+
 // ====== Environment Analysis Function ======
 void analyzeEnvironment() {
-  // Need at least two scans to compare
-  if (firstWiFiScan) {
+  // Build combined set of current WiFi networks and BLE devices
+  std::set<std::string> combinedCurrent = uniqueWiFiNetworks;
+  for (const auto& dev : uniqueBLEDevices) {
+    combinedCurrent.insert(dev);
+  }
+
+  // Build set of current device hashes
+  std::set<uint32_t> currentHashes;
+  for (const auto& device : combinedCurrent) {
+    currentHashes.insert(hashString(device));
+  }
+
+  // Count combined devices
+  combinedDeviceCount = combinedCurrent.size();
+
+  // Need at least two scans to compare; initialize baseline on first run
+  if (firstDeviceScan) {
     environmentType = UNKNOWN;
-    wifiChangeRatio = 0.0;
-    Serial.println("  Environment: UNKNOWN (first scan)");
+    deviceChangeRatio = 0.0;
+    Serial.println("  Environment: UNKNOWN (first device scan)");
+    
+    // Store current device hashes in RTC memory for next wake cycle
+    previousDeviceCount = min((uint16_t)currentHashes.size(), (uint16_t)MAX_RTC_DEVICES);
+    uint16_t idx = 0;
+    for (const auto& h : currentHashes) {
+      if (idx >= MAX_RTC_DEVICES) break;
+      previousDeviceHashes[idx++] = h;
+    }
+    
+    firstDeviceScan = false;
     return;
   }
-  
-  // Need minimum number of networks for meaningful analysis
-  if (wifiNetworkCount < MIN_NETWORKS_FOR_ANALYSIS && 
-      previousWiFiNetworks.size() < MIN_NETWORKS_FOR_ANALYSIS) {
-    environmentType = UNKNOWN;
-    wifiChangeRatio = 0.0;
-    Serial.println("  Environment: UNKNOWN (insufficient networks)");
-    return;
+
+  // Build set of previous device hashes from RTC memory
+  std::set<uint32_t> previousHashes;
+  for (uint16_t i = 0; i < previousDeviceCount; i++) {
+    previousHashes.insert(previousDeviceHashes[i]);
   }
-  
-  // Calculate the intersection (common networks) and union
-  std::set<std::string> intersection;
-  std::set<std::string> networkUnion;
-  
-  // Find common networks (intersection)
-  for (const auto& network : uniqueWiFiNetworks) {
-    if (previousWiFiNetworks.find(network) != previousWiFiNetworks.end()) {
-      intersection.insert(network);
+
+  // Calculate intersection (common devices by hash)
+  uint16_t intersectionCount = 0;
+  for (const auto& h : currentHashes) {
+    if (previousHashes.find(h) != previousHashes.end()) {
+      intersectionCount++;
     }
   }
-  
-  // Calculate union (all unique networks from both scans)
-  networkUnion = uniqueWiFiNetworks;
-  for (const auto& network : previousWiFiNetworks) {
-    networkUnion.insert(network);
+
+  // Calculate union size
+  std::set<uint32_t> unionHashes = currentHashes;
+  for (const auto& h : previousHashes) {
+    unionHashes.insert(h);
   }
+  uint16_t unionCount = unionHashes.size();
   
   // Calculate change ratio using Jaccard distance
   // Change ratio = 1 - (intersection / union)
-  if (networkUnion.size() > 0) {
-    float similarity = (float)intersection.size() / (float)networkUnion.size();
-    wifiChangeRatio = 1.0 - similarity;
+  if (unionCount > 0) {
+    float similarity = (float)intersectionCount / (float)unionCount;
+    deviceChangeRatio = 1.0 - similarity;
   } else {
-    wifiChangeRatio = 0.0;
+    deviceChangeRatio = 0.0;
   }
   
   // Classify environment
-  if (wifiChangeRatio >= WIFI_CHANGE_THRESHOLD) {
+  if (deviceChangeRatio > WIFI_CHANGE_THRESHOLD) {
     environmentType = MOBILE;
     Serial.print("  Environment: MOBILE (change ratio: ");
   } else {
     environmentType = STATIC;
     Serial.print("  Environment: STATIC (change ratio: ");
   }
-  Serial.print(wifiChangeRatio, 2);
+  Serial.print(deviceChangeRatio, 2);
   Serial.println(")");
   
-  Serial.print("    Common networks: ");
-  Serial.print(intersection.size());
+  Serial.print("    Common devices: ");
+  Serial.print(intersectionCount);
   Serial.print(", Total unique: ");
-  Serial.println(networkUnion.size());
+  Serial.println(unionCount);
+
+  // Store current device hashes in RTC memory for next wake cycle
+  previousDeviceCount = min((uint16_t)currentHashes.size(), (uint16_t)MAX_RTC_DEVICES);
+  uint16_t idx = 0;
+  for (const auto& h : currentHashes) {
+    if (idx >= MAX_RTC_DEVICES) break;
+    previousDeviceHashes[idx++] = h;
+  }
 }
 
 // ====== Crowd Level Classification Function ======
@@ -341,6 +390,8 @@ void performCrowdDetection() {
   Serial.println(wifiNetworkCount);
   Serial.print("Total Devices: ");
   Serial.println(totalUniqueDevices);
+  Serial.print("Combined Unique Devices (WiFi + BLE): ");
+  Serial.println(combinedDeviceCount);
   Serial.print("Crowd Level: ");
   
   switch (currentCrowdLevel) {
@@ -378,6 +429,9 @@ void performCrowdDetection() {
       Serial.println("UNKNOWN");
       break;
   }
+  Serial.print("Device Change Ratio: ");
+  Serial.print(deviceChangeRatio, 2);
+  Serial.println("\n");
   
   Serial.println("==========================================\n");
 }
@@ -493,7 +547,7 @@ void setup() {
   Serial.println(" devices");
   Serial.print("  Tracked Beacon: ");
   Serial.println(targetBeaconAddress);
-  Serial.print("  WiFi Change Threshold: ");
+  Serial.print("  Device Change Threshold (WiFi + BLE): ");
   Serial.print(WIFI_CHANGE_THRESHOLD * 100);
   Serial.println("%");
   Serial.print("  LoRaWAN TX Interval: ");

@@ -16,24 +16,24 @@ Successfully implemented two advanced extensions to the LoRa Lighthouse Node:
   - Measures signal strength (RSSI in dBm)
   - Configurable beacon MAC address via `BEACON_ADDRESS` constant
 
-- **Environment Detection**: Analyzes WiFi network stability
+ **Environment Detection**: Analyzes WiFi and BLE device stability
   - Compares WiFi access points between scans
   - Uses Jaccard distance algorithm for change detection
-  - Classifies environment as STATIC, MOBILE, or UNKNOWN
-  - Configurable threshold via `WIFI_CHANGE_THRESHOLD` constant
-
+  - `WIFI_CHANGE_THRESHOLD`: 5% change threshold for mobile detection
+  - `MIN_DEVICES_FOR_ANALYSIS`: Minimum devices (WiFi + BLE) needed (3)
+  - `MIN_DEVICES_FOR_ANALYSIS`: Minimum devices (WiFi + BLE) needed (3)
 #### Key Code Additions:
 - New configuration constants:
   - `BEACON_ADDRESS`: Target beacon MAC address
   - `RSSI_NOT_FOUND`: Default RSSI value (-128)
   - `WIFI_CHANGE_THRESHOLD`: 30% change threshold for mobile detection
-  - `MIN_NETWORKS_FOR_ANALYSIS`: Minimum networks needed (3)
+  - `MIN_DEVICES_FOR_ANALYSIS`: Minimum devices (WiFi + BLE) needed (3)
 
 - New variables:
   - `beaconDetected`, `beaconRSSI`: Beacon tracking state
   - `previousWiFiNetworks`: Store last scan for comparison
-  - `environmentType`, `wifiChangeRatio`: Environment analysis results
-  - `firstWiFiScan`: Flag to track initialization
+  - `environmentType`, `deviceChangeRatio`: Environment analysis results
+  - `firstDeviceScan`: Flag to track initialization of combined device analysis
 
 - New function: `analyzeEnvironment()`
   - Calculates network intersection and union
@@ -123,8 +123,8 @@ Byte 9:   Environment type (uint8: 0=STATIC, 1=MOBILE, 2=UNKNOWN)
 
 4. **Optional Threshold Adjustments**:
    ```cpp
-   #define WIFI_CHANGE_THRESHOLD 0.3    // Adjust sensitivity (0.0-1.0)
-   #define MIN_NETWORKS_FOR_ANALYSIS 3  // Minimum WiFi networks
+  #define WIFI_CHANGE_THRESHOLD 0.1    // Adjust sensitivity (0.0-1.0) - default 10%
+  #define MIN_DEVICES_FOR_ANALYSIS 3  // Minimum devices (WiFi + BLE)
    ```
 
 ## Testing Checklist
